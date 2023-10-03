@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Suitcase_Demo_Functions": {
+    "Briefcase_Demo_Functions": {
       "commandName": "Project",
       "commandLineArgs": "--port 7190 --verbose"
     }

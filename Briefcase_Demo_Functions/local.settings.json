@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    //"AzureWebJobsSecretStorageType": "Files",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureSignalRConnectionString": "Endpoint=https://suitcase-demo-signalr.service.signalr.net;AccessKey=bWYk2p+V4LfBUYa3yBOMACGfP7GA1ud/5R1vgfyrRqQ=;Version=1.0;",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+    "EventHubConnectionString": "Endpoint=sb://eventhub-soltemplate-ojvbg.servicebus.windows.net/;SharedAccessKeyName=ReadAccess;SharedAccessKey=gmX4Xqm63Egg6BWFPitFgCgPsXE418Vse+AEhGy8M/w=;EntityPath=sonysmartcamera",
+    "DeviceIdFilter": "sid-100A50500A2016028064012000000000;sid-100A50500A2013098864012000000000;sid-100A50500A2011003964012000000000;sid-100A50500A2011003964012000000000;sid-100A50500A2014083064012000000000",
+    "EventHubName": "sonysmartcamera",
+    "TELEMETRY_CG": "briefcasedemo"
+  }
+}

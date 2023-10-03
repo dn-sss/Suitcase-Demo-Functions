@@ -4,13 +4,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Suitcase_Demo_Functions
+namespace Briefcase_Demo_Functions
 {
     internal class DataModel
     {
         public class INFERENCE_RESULT_ITEM
         {
-            public int Class { get; set; }
+            public uint Class { get; set; }
             public double Confidence { get; set; }
             public double x { get; set; }
             public double y { get; set; }

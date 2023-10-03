@@ -9,9 +9,11 @@ using Microsoft.Azure.WebJobs.Extensions.SignalRService;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using static Suitcase_Demo_Functions.DataModel;
+using static Briefcase_Demo_Functions.DataModel;
+using Google.FlatBuffers;
+using SmartCamera;
 
-namespace Suitcase_Demo_Functions
+namespace Briefcase_Demo_Functions
 {
     public static class Telemetry_Processor
     {
@@ -27,13 +29,11 @@ namespace Suitcase_Demo_Functions
             _logger = log;
             List<string> deivceIdFilterList = System.Environment.GetEnvironmentVariable("DeviceIdFilter").Split(';').ToList();
 
-            // Custom Vision's Max Detection
-            int MAX_DETECTION = 64;
             INFERENCE_RESULT inferenceResults = null;
 
             foreach (EventData ed in eventData)
             {
-                try
+                //try
                 {
                     DateTime now = DateTime.Now;
 
@@ -70,33 +70,11 @@ namespace Suitcase_Demo_Functions
 
                         if (jObject["backdoor-EA_Main/placeholder"]["Inferences"] != null)
                         {
+
                             inferenceResults = new INFERENCE_RESULT();
-                            inferenceResults.inferenceResults = new List<INFERENCE_RESULT_ITEM>();
 
                             foreach (var inferenceResult in jObject["backdoor-EA_Main/placeholder"]["Inferences"])
                             {
-                                // parse Custom Vision output.
-                                List<float> resultArray = new List<float>();
-                                String bse64EncodedString = inferenceResult["O"].ToString();
-
-                                // Decode Base64 encoded string
-                                var base64EncodedBytes = Convert.FromBase64String(bse64EncodedString);
-
-                                // 
-                                //   0 -  63 : Normalized Start X of Bounding Box Output 
-                                //  64 - 127 : Normalized Start Y of Bounding Box Output
-                                // 128 - 191 : Normalized End X of Bounding Box Output
-                                // 192 - 255 : Normalized End Y of Bounding Box Output
-                                // 256 - 319 : Classification (Class ID)
-                                // 320 - 383 : Accuracy
-
-                                // Convert to array with Float
-                                for (int i = 0; i <= MAX_DETECTION * 6; i++)
-                                {
-                                    float myFloat = System.BitConverter.ToSingle(base64EncodedBytes, 4 * i);
-                                    resultArray.Add(myFloat);
-                                }
-
                                 DateTime inferenceTime;
                                 if (false == DateTime.TryParseExact(inferenceResult["T"].ToString(),
                                                                     "yyyyMMddHHmmssfff",
@@ -109,35 +87,19 @@ namespace Suitcase_Demo_Functions
 
                                 if ((now - inferenceTime).Hours > 1)
                                 {
-                                    continue;
+                                    //continue;
                                 }
+
+                                List<INFERENCE_RESULT_ITEM> deserializedBuffer = Deserialize(inferenceResult["O"].ToString());
 
                                 inferenceResults.DeviceId = deviceId;
                                 inferenceResults.ModelId = jObject["backdoor-EA_Main/placeholder"]["ModelID"].ToString();
                                 inferenceResults.Image = jObject["backdoor-EA_Main/placeholder"]["Image"].ToObject<bool>();
 
                                 inferenceResults.T = inferenceResult["T"].ToString();
-                                // Re-format to INFERENCE_ITEM
-                                for (int i = 0; i < MAX_DETECTION; i++)
-                                {
-                                    if (resultArray[i + MAX_DETECTION * 5] == 0.0)
-                                    {
-                                        continue;
-                                    }
 
-                                    INFERENCE_RESULT_ITEM inferenceResultItem = new INFERENCE_RESULT_ITEM
-                                    {
-                                        Class = Convert.ToInt32(resultArray[i + MAX_DETECTION * 4]),
-                                        Confidence = resultArray[i + MAX_DETECTION * 5],
-                                        y = resultArray[i + MAX_DETECTION * 0],
-                                        x = resultArray[i + MAX_DETECTION * 1],
-                                        Y = resultArray[i + MAX_DETECTION * 2],
-                                        X = resultArray[i + MAX_DETECTION * 3],
-                                    };
-
-                                    inferenceResults.inferenceResults.Add(inferenceResultItem);
-                                }
-
+                                inferenceResults.inferenceResults = deserializedBuffer;
+     
                                 _logger.LogInformation($"Inference Result : {inferenceResults.DeviceId} {inferenceResults.ModelId} {inferenceTime}");
 
                                 foreach (var item in inferenceResults.inferenceResults)
@@ -148,10 +110,11 @@ namespace Suitcase_Demo_Functions
                         }
                     }
 
-                    if (inferenceResults != null && inferenceResults.inferenceResults.Count > 0)
-                    {
-                        // send to SignalR Hub
-                        var data = JsonConvert.SerializeObject(inferenceResults);
+                    //if (inferenceResults != null && inferenceResults.inferenceResults.Count > 0)
+                        if (inferenceResults != null)
+                        {
+                            // send to SignalR Hub
+                            var data = JsonConvert.SerializeObject(inferenceResults);
 
                         _logger.LogInformation($"SignalR Message (EventHub): {data.Length}");
                         await signalRMessage.AddAsync(new SignalRMessage
@@ -162,12 +125,12 @@ namespace Suitcase_Demo_Functions
                     }
                     await Task.Yield();
                 }
-                catch (Exception e)
-                {
-                    // We need to keep processing the rest of the batch - capture this exception and continue.
-                    // Also, consider capturing details of the message that failed processing so it can be processed again later.
-                    exceptions.Add(e);
-                }
+                //catch (Exception e)
+                //{
+                //    // We need to keep processing the rest of the batch - capture this exception and continue.
+                //    // Also, consider capturing details of the message that failed processing so it can be processed again later.
+                //    exceptions.Add(e);
+                //}
             }
 
             // Once processing of the batch is complete, if any messages in the batch failed processing throw an exception so that there is a record of the failure.
@@ -179,6 +142,35 @@ namespace Suitcase_Demo_Functions
                 throw exceptions.Single();
         }
 
+        private static List<INFERENCE_RESULT_ITEM> Deserialize(string inferenceData)
+        {
+            byte[] buf = Convert.FromBase64String(inferenceData);
+            ObjectDetectionTop objectDetectionTop = ObjectDetectionTop.GetRootAsObjectDetectionTop(new ByteBuffer(buf));
+            ObjectDetectionData objectData = objectDetectionTop.Perception ?? new ObjectDetectionData();
+            int resNum = objectData.ObjectDetectionListLength;
+            _logger.LogInformation($"NumOfDetections: {resNum.ToString()}");
+
+            List<INFERENCE_RESULT_ITEM> inferenceResults = new List<INFERENCE_RESULT_ITEM>();
+            for (int i = 0; i < resNum; i++)
+            {
+                GeneralObject objectList = objectData.ObjectDetectionList(i) ?? new GeneralObject();
+                BoundingBox unionType = objectList.BoundingBoxType;
+                if (unionType == BoundingBox.BoundingBox2d)
+                {
+                    var bbox2d = objectList.BoundingBox<BoundingBox2d>().Value;
+                    INFERENCE_RESULT_ITEM data = new INFERENCE_RESULT_ITEM();
+                    data.Class = objectList.ClassId;
+                    data.Confidence = (float)Math.Round(objectList.Score, 6, MidpointRounding.AwayFromZero);
+                    data.x = bbox2d.Left;
+                    data.y = bbox2d.Top;
+                    data.X = bbox2d.Right;
+                    data.Y = bbox2d.Bottom;
+
+                    inferenceResults.Add(data);
+                }
+            }
+            return inferenceResults;
+        }
 
     }
 }
